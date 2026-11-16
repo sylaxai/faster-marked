@@ -932,14 +932,23 @@ function tryDef(lines, i, end, defs) {
   const line = lines[i];
   const { col, idx } = lineIndent(line);
   if (col > 3 || line[idx] !== '[') return -1;
-  const labelEnd = scanLabel(line, idx);
+  let labelEnd = scanLabel(line, idx);
+  let labelText = line;
+  let li0 = i;
+  while (labelEnd === -1 && li0 + 1 < end) {
+    const nl = lines[li0 + 1];
+    if (nl.trim() === '') break;
+    labelText += '\n' + nl;
+    li0++;
+    labelEnd = scanLabel(labelText, idx);
+  }
   if (labelEnd === -1) return -1;
-  const label = line.slice(idx + 1, labelEnd - 1);
+  const label = labelText.slice(idx + 1, labelEnd - 1);
   if (!label.trim() || label.length > 999) return -1;
-  if (line[labelEnd] !== ':') return -1;
-  let li = i;
-  let cur = line;
-  let pos = labelEnd + 1;
+  if (labelText[labelEnd] !== ':') return -1;
+  let li = li0;
+  let cur = lines[li0];
+  let pos = labelEnd - (labelText.length - cur.length) + 1;
   while (pos < cur.length && (cur[pos] === ' ' || cur[pos] === '\t')) pos++;
   if (pos >= cur.length) {
     if (li + 1 >= end) return -1;
@@ -974,12 +983,30 @@ function tryDef(lines, i, end, defs) {
   } else {
     // a title must be separated from the destination by whitespace
     if (p2 === pos) return -1;
-    const t = parseTitle(cur, p2);
-    if (!t) return -1;
-    title = t.title;
-    let q = t.end;
-    while (q < cur.length && (cur[q] === ' ' || cur[q] === '\t')) q++;
-    if (q !== cur.length) return -1;
+    let t = parseTitle(cur, p2);
+    if (!t) {
+      // title may continue on following lines (cm-196)
+      let joined = cur.slice(p2);
+      let lj = li;
+      while (!t && lj + 1 < end) {
+        const nl = lines[lj + 1];
+        if (nl.trim() === '') break;
+        joined += '\n' + nl;
+        lj++;
+        t = parseTitle(joined, 0);
+      }
+      if (!t) return -1;
+      let q = t.end;
+      while (q < joined.length && (joined[q] === ' ' || joined[q] === '\t')) q++;
+      if (q !== joined.length) return -1;
+      title = t.title;
+      li = lj;
+    } else {
+      title = t.title;
+      let q = t.end;
+      while (q < cur.length && (cur[q] === ' ' || cur[q] === '\t')) q++;
+      if (q !== cur.length) return -1;
+    }
   }
   if (!defs.has(normLabel(label))) defs.set(normLabel(label), { dest, title });
   return li + 1;
